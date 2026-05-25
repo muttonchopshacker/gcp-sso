@@ -1,6 +1,6 @@
 # gcp-sso
 
-`gcp-sso` (GCP Service Profile Switcher) is a lightweight, fast, and secure command-line utility for Google Cloud Platform (GCP) designed to provide a seamless, session-isolated profile switching experience similar to `aws-sso-cli`.
+`gcp-sso` (GCP Service Profile Switcher) is a lightweight, fast, and secure command-line utility for Google Cloud Platform (GCP) designed to provide a seamless, session-isolated profile switching experience.
 
 It allows you to manage multiple GCP accounts, projects, and impersonated service accounts simultaneously across different terminal sessions without mutual interference.
 
@@ -9,7 +9,7 @@ It allows you to manage multiple GCP accounts, projects, and impersonated servic
 ## 🚀 Key Features
 
 *   **Terminal-Level Isolation:** Switch profiles in a single shell session without affecting other terminal windows (powered by environment variable overrides instead of global `gcloud` configurations).
-*   **Service Account Impersonation:** Native, effortless support for GCP Service Account impersonation (the equivalent of AWS IAM Role assumption).
+*   **Service Account Impersonation:** Native, effortless support for GCP Service Account impersonation.
 *   **Isolated ADC Cache:** Bypasses the single global Application Default Credentials (ADC) limitation by caching ADCs per account and dynamically linking `GOOGLE_APPLICATION_CREDENTIALS`.
 *   **Isolated Kubernetes (`kubectl`) Sessions:** Automatically generates and isolates GKE cluster credentials in a profile-specific `KUBECONFIG` file.
 *   **Interactive Console Access:** Instantly generates a deep-link and opens the Google Cloud Console with the correct target project and user account pre-selected.
