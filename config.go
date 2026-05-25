@@ -37,14 +37,20 @@ func GetConfigDir() (string, error) {
 	return filepath.Join(home, ".config", "gcp-sso"), nil
 }
 
+var configPathOverride string
+
 // GetConfigPath returns the path to config.json.
 func GetConfigPath() (string, error) {
+	if configPathOverride != "" {
+		return configPathOverride, nil
+	}
 	dir, err := GetConfigDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(dir, "config.json"), nil
 }
+
 
 // LoadConfig loads the configuration from config.json.
 func LoadConfig() (*Config, error) {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,7 +62,7 @@ func printUsage() {
 	fmt.Println("  console [<profile>] Open Google Cloud Console for active or specified profile")
 	fmt.Println("  help               Show this help message")
 	fmt.Println("\nFor shell integration, add the following to your shell profile (e.g. ~/.bashrc or ~/.zshrc):")
-	fmt.Println(`
+	fmt.Print(`
 gsp() {
   if [ $# -eq 0 ]; then
     echo "Usage: gsp <profile-name>  (or 'gsp off' to deactivate)"
