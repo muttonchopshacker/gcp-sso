@@ -3,75 +3,30 @@ name: Release
 on:
   push:
     tags:
-      - 'v*' # Trigger on version tags, e.g. v1.0.0, v0.1.0
+      - 'v*'
 
 permissions:
-  contents: write # Required to create releases and upload assets
+  contents: write
 
 jobs:
-  build-and-release:
-    name: Build and Release
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Essential: GoReleaser needs full git history to generate rich changelog
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21' # Specify your Go version
+          go-version: '1.21'
 
-      - name: Build Binaries
-        run: |
-          mkdir -p dist
-          
-          # Target matrix
-          platforms=(
-            "linux/amd64"
-            "linux/arm64"
-            "darwin/amd64"
-            "darwin/arm64"
-            "windows/amd64"
-            "windows/arm64"
-          )
-          
-          for platform in "${platforms[@]}"; do
-            # Split platform into OS and Arch
-            IFS="/" read -r -a parts <<< "$platform"
-            goos="${parts[0]}"
-            goarch="${parts[1]}"
-            
-            # Set binary name
-            binary_name="gcp-sso-${goos}-${goarch}"
-            if [ "$goos" = "windows" ]; then
-              binary_name="${binary_name}.exe"
-            fi
-            
-            echo "Building for ${goos}/${goarch}..."
-            
-            # Compile
-            GOOS=$goos GOARCH=$goarch go build -ldflags="-s -w" -o "dist/${binary_name}" .
-            
-            # Package into archive
-            if [ "$goos" = "windows" ]; then
-              # Zip for Windows
-              zip -j "dist/gcp-sso-${goos}-${goarch}.zip" "dist/${binary_name}"
-              rm "dist/${binary_name}"
-            else
-              # Tar.gz for Linux/macOS
-              tar -czf "dist/gcp-sso-${goos}-${goarch}.tar.gz" -C dist "${binary_name}"
-              rm "dist/${binary_name}"
-            fi
-          done
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
-          files: |
-            dist/gcp-sso-*.tar.gz
-            dist/gcp-sso-*.zip
-          draft: false
-          prerelease: false
-          generate_release_notes: true
+          distribution: goreleaser
+          version: "~> v2" # Use latest v2 series of GoReleaser
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
