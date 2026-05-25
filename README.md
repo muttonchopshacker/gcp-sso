@@ -37,50 +37,7 @@ It allows you to manage multiple GCP accounts, projects, and impersonated servic
     mv gcp-sso ~/bin/
     ```
 
----
 
-## 🐚 Shell Integration
-
-To enable session-isolated switching, you must add a wrapper function to your shell profile (e.g., `~/.bashrc`, `~/.zshrc`).
-
-Append the following function to your shell profile:
-
-```bash
-# GCP SSO CLI shell integration
-gsp() {
-  if [ $# -eq 0 ]; then
-    gcp-sso list
-    return 0
-  fi
-  local profile="$1"
-  if [ "$profile" = "unset" ] || [ "$profile" = "off" ]; then
-    unset GCP_SSO_PROFILE
-    unset CLOUDSDK_CORE_PROJECT
-    unset CLOUDSDK_CORE_ACCOUNT
-    unset CLOUDSDK_COMPUTE_REGION
-    unset CLOUDSDK_COMPUTE_ZONE
-    unset CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT
-    unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
-    unset GOOGLE_APPLICATION_CREDENTIALS
-    unset KUBECONFIG
-    echo "GCP Profile cleared."
-  else
-    local env_output
-    env_output=$(gcp-sso env "$profile")
-    if [ $? -eq 0 ]; then
-      eval "$env_output"
-      echo "Switched to GCP Profile: $profile"
-    fi
-  fi
-}
-```
-
-After saving, reload your shell:
-```bash
-source ~/.bashrc  # or ~/.zshrc
-```
-
----
 
 ## ⚙️ Configuration
 
@@ -196,25 +153,11 @@ gcp-sso logout dev-developer
 ```
 This completely deletes the isolated directory (`~/.config/gcp-sso/profiles/dev-developer/`) from your disk while preserving the profile definition in `config.json` for future use.
 
----
-
-## 🐚 Alternative: In-Shell Switching (Eval Mode)
-
-If you prefer to switch profiles directly in your current shell without spawning a subshell process, you can use the shell wrapper integration.
-
-1.  **Configure Shell Integration:** Follow the steps in the [Shell Integration](#-shell-integration) section.
-2.  **Bootstrap/Login (Manually):**
-    ```bash
-    gcp-sso login dev-developer
-    ```
-3.  **Switch Profile:**
-    ```bash
-    gsp dev-developer
-    ```
-4.  **Clear Profile:**
-    ```bash
-    gsp off
-    ```
+### 6. View Version & Author
+To display the tool version and author information:
+```bash
+gcp-sso version
+```
 
 ---
 

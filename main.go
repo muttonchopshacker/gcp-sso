@@ -8,6 +8,11 @@ import (
 	"text/tabwriter"
 )
 
+var (
+	Version = "1.1.0"
+	Author  = "Visveswaran Vaidyanathan"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -55,12 +60,19 @@ func main() {
 		handleConsole(profileName)
 	case "configure", "config":
 		handleConfigure()
+	case "version", "-v", "--version":
+		handleVersion()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
 		fmt.Printf("Unknown command %q. Use 'gcp-sso help' for usage.\n", cmd)
 		os.Exit(1)
 	}
+}
+
+func handleVersion() {
+	fmt.Printf("GCP SSO CLI (gcp-sso) version %s\n", Version)
+	fmt.Printf("Author: %s\n", Author)
 }
 
 func printUsage() {
@@ -79,36 +91,8 @@ func printUsage() {
 	fmt.Println("  logout <profile>       Log out of a profile (deletes all isolated credentials)")
 	fmt.Println("  env <profile>          Generate shell environment exports (intended for eval)")
 	fmt.Println("  console [<profile>]     Open Google Cloud Console for active or specified profile")
+	fmt.Println("  version                Display version and author information")
 	fmt.Println("  help                   Show this help message")
-	fmt.Println("\nFor shell integration, add the following to your shell profile (e.g. ~/.bashrc or ~/.zshrc):")
-	fmt.Print(`
-gsp() {
-  if [ $# -eq 0 ]; then
-    echo "Usage: gsp <profile-name>  (or 'gsp off' to deactivate)"
-    return 1
-  fi
-  local profile="$1"
-  if [ "$profile" = "unset" ] || [ "$profile" = "off" ]; then
-    unset GCP_SSO_PROFILE
-    unset CLOUDSDK_CORE_PROJECT
-    unset CLOUDSDK_CORE_ACCOUNT
-    unset CLOUDSDK_COMPUTE_REGION
-    unset CLOUDSDK_COMPUTE_ZONE
-    unset CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT
-    unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT
-    unset GOOGLE_APPLICATION_CREDENTIALS
-    unset KUBECONFIG
-    echo "GCP Profile cleared."
-  else
-    local env_output
-    env_output=$(gcp-sso env "$profile")
-    if [ $? -eq 0 ]; then
-      eval "$env_output"
-      echo "Switched to GCP Profile: $profile"
-    fi
-  fi
-}
-`)
 }
 
 func handleInit() {
