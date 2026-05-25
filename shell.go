@@ -25,7 +25,7 @@ func handleShell(profileName string) {
 	needLogin := false
 	
 	// Check ADC cache
-	adcPath, err := GetADCCachePath(profile.Account)
+	adcPath, err := GetADCCachePath(profileName)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
