@@ -1,0 +1,10 @@
+# Compiled binaries
+gcp-sso
+gcp-sso.exe
+
+# Build distribution directory (used by release scripts)
+dist/
+
+# Test binaries
+*.test
+test-build/

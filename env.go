@@ -6,22 +6,41 @@ import (
 	"path/filepath"
 )
 
-// GetKubeconfigPath returns the path to the profile-specific kubeconfig file.
-func GetKubeconfigPath(profileName string) (string, error) {
-	dir, err := GetConfigDir()
+// GetProfileDir returns the path to the profile-specific root directory (~/.config/gcp-sso/profiles/<profile>).
+func GetProfileDir(profileName string) (string, error) {
+	configPath, err := GetConfigPath()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "kube", fmt.Sprintf("%s.yaml", profileName)), nil
+	configDir := filepath.Dir(configPath)
+	return filepath.Join(configDir, "profiles", profileName), nil
 }
 
-// GetADCCachePath returns the path to the cached ADC file for a given account.
-func GetADCCachePath(account string) (string, error) {
-	dir, err := GetConfigDir()
+// GetKubeconfigPath returns the path to the profile-specific kubeconfig file.
+func GetKubeconfigPath(profileName string) (string, error) {
+	profileDir, err := GetProfileDir(profileName)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "adc", fmt.Sprintf("%s.json", account)), nil
+	return filepath.Join(profileDir, "kube.yaml"), nil
+}
+
+// GetCloudsdkConfigDir returns the path to the profile-specific gcloud config directory.
+func GetCloudsdkConfigDir(profileName string) (string, error) {
+	profileDir, err := GetProfileDir(profileName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(profileDir, "gcloud"), nil
+}
+
+// GetADCCachePath returns the path to the cached ADC file for a given profile.
+func GetADCCachePath(profileName string) (string, error) {
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(gcloudDir, "application_default_credentials.json"), nil
 }
 
 // GetEnvMap generates a map of all environment variables to be set for a profile.
@@ -31,8 +50,14 @@ func GetEnvMap(profileName string, cfg *Config) (map[string]string, error) {
 		return nil, fmt.Errorf("profile %q not found", profileName)
 	}
 
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err != nil {
+		return nil, err
+	}
+
 	env := map[string]string{
 		"GCP_SSO_PROFILE":      profileName,
+		"CLOUDSDK_CONFIG":      gcloudDir,
 		"CLOUDSDK_CORE_PROJECT": profile.Project,
 		"CLOUDSDK_CORE_ACCOUNT": profile.Account,
 	}
@@ -49,7 +74,7 @@ func GetEnvMap(profileName string, cfg *Config) (map[string]string, error) {
 		env["GOOGLE_IMPERSONATE_SERVICE_ACCOUNT"] = profile.ImpersonateServiceAccount
 	}
 
-	adcPath, err := GetADCCachePath(profile.Account)
+	adcPath, err := GetADCCachePath(profileName)
 	if err == nil {
 		if _, err := os.Stat(adcPath); err == nil {
 			env["GOOGLE_APPLICATION_CREDENTIALS"] = adcPath
@@ -77,6 +102,7 @@ func GenerateEnvOutputs(profileName string, cfg *Config) error {
 	// Known set of variables we manage
 	keys := []string{
 		"GCP_SSO_PROFILE",
+		"CLOUDSDK_CONFIG",
 		"CLOUDSDK_CORE_PROJECT",
 		"CLOUDSDK_CORE_ACCOUNT",
 		"CLOUDSDK_COMPUTE_REGION",
@@ -94,8 +120,7 @@ func GenerateEnvOutputs(profileName string, cfg *Config) error {
 		} else {
 			// Handle printing comments/warnings for missing required files
 			if key == "GOOGLE_APPLICATION_CREDENTIALS" {
-				profile := cfg.Profiles[profileName]
-				fmt.Printf("# WARNING: ADC cache not found for account %s. Run 'gcp-sso login %s' to authenticate.\n", profile.Account, profileName)
+				fmt.Printf("# WARNING: ADC cache not found. Run 'gcp-sso login %s' to authenticate.\n", profileName)
 			} else if key == "KUBECONFIG" {
 				profile := cfg.Profiles[profileName]
 				if profile.GKE != nil && profile.GKE.Cluster != "" {

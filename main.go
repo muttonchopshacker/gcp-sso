@@ -29,6 +29,12 @@ func main() {
 			os.Exit(1)
 		}
 		handleLogin(os.Args[2])
+	case "logout":
+		if len(os.Args) < 3 {
+			fmt.Println("Error: Profile name required. Usage: gcp-sso logout <profile-name>")
+			os.Exit(1)
+		}
+		handleLogout(os.Args[2])
 	case "env":
 		if len(os.Args) < 3 {
 			fmt.Println("Error: Profile name required. Usage: gcp-sso env <profile-name>")
@@ -70,6 +76,7 @@ func printUsage() {
 	fmt.Println("  configure delete <name> Delete a profile")
 	fmt.Println("  shell <profile>        Spawn a pre-configured isolated subshell (primary usage)")
 	fmt.Println("  login <profile>        Authenticate and bootstrap a profile (gcloud + ADC + GKE)")
+	fmt.Println("  logout <profile>       Log out of a profile (deletes all isolated credentials)")
 	fmt.Println("  env <profile>          Generate shell environment exports (intended for eval)")
 	fmt.Println("  console [<profile>]     Open Google Cloud Console for active or specified profile")
 	fmt.Println("  help                   Show this help message")
@@ -197,6 +204,11 @@ func handleStatus() {
 	fmt.Printf("Active Profile:    %s\n", activeProfile)
 	fmt.Printf("Project:           %s\n", os.Getenv("CLOUDSDK_CORE_PROJECT"))
 	fmt.Printf("Account:           %s\n", os.Getenv("CLOUDSDK_CORE_ACCOUNT"))
+
+	gcloudTTL := GetTokenTTL(activeProfile, false)
+	adcTTL := GetTokenTTL(activeProfile, true)
+	fmt.Printf("GCloud Session:    %s\n", gcloudTTL)
+	fmt.Printf("ADC Session:       %s\n", adcTTL)
 	
 	if reg := os.Getenv("CLOUDSDK_COMPUTE_REGION"); reg != "" {
 		fmt.Printf("Region:            %s\n", reg)
@@ -227,6 +239,19 @@ func handleLogin(profileName string) {
 
 	if err := LoginProfile(profileName, cfg); err != nil {
 		fmt.Printf("\nLogin failed: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func handleLogout(profileName string) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		fmt.Printf("Error loading config: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := LogoutProfile(profileName, cfg); err != nil {
+		fmt.Printf("\nLogout failed: %v\n", err)
 		os.Exit(1)
 	}
 }

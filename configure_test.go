@@ -144,3 +144,55 @@ func TestConfigureDelete(t *testing.T) {
 		t.Error("Profile 'delete-me' was not deleted")
 	}
 }
+
+func TestLogoutProfile(t *testing.T) {
+	tempDir, _ := os.MkdirTemp("", "gcp-sso-logout-test")
+	defer os.RemoveAll(tempDir)
+	configPathOverride = filepath.Join(tempDir, "config.json")
+	defer func() { configPathOverride = "" }()
+
+	// Setup a test profile definition
+	cfg := &Config{
+		Profiles: map[string]Profile{
+			"test-profile": {
+				Account: "user@example.com",
+				Project: "project-123",
+			},
+		},
+	}
+	SaveConfig(cfg)
+
+	// Create an isolated profile directory on disk (mimics active session files)
+	profileDir := filepath.Join(tempDir, "profiles", "test-profile")
+	gcloudDir := filepath.Join(profileDir, "gcloud")
+	if err := os.MkdirAll(gcloudDir, 0755); err != nil {
+		t.Fatalf("Failed to setup test directories: %v", err)
+	}
+
+	// Write a dummy credential file
+	dummyCred := filepath.Join(gcloudDir, "application_default_credentials.json")
+	if err := os.WriteFile(dummyCred, []byte("{}"), 0600); err != nil {
+		t.Fatalf("Failed to write dummy credential: %v", err)
+	}
+
+	// Test logging out of non-existent profile
+	if err := LogoutProfile("nonexistent", cfg); err == nil {
+		t.Error("Expected error when logging out of non-existent profile")
+	}
+
+	// Test logging out of active profile
+	if err := LogoutProfile("test-profile", cfg); err != nil {
+		t.Errorf("LogoutProfile failed: %v", err)
+	}
+
+	// Verify the directory was deleted from disk
+	if _, err := os.Stat(profileDir); !os.IsNotExist(err) {
+		t.Error("Expected profile directory to be deleted from disk, but it still exists")
+	}
+
+	// Verify that the profile DEFINITION still exists in config.json
+	savedCfg, _ := LoadConfig()
+	if _, ok := savedCfg.Profiles["test-profile"]; !ok {
+		t.Error("Expected profile definition to be preserved in config.json, but it was deleted")
+	}
+}

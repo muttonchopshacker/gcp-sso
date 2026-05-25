@@ -189,6 +189,13 @@ Directly open the Google Cloud Console web page pre-selected to the profile's pr
 gcp-sso console
 ```
 
+### 5. Log Out of a Profile
+To log out and securely clean up all local credentials, active access tokens, and isolated GKE kubeconfigs for a profile, run:
+```bash
+gcp-sso logout dev-developer
+```
+This completely deletes the isolated directory (`~/.config/gcp-sso/profiles/dev-developer/`) from your disk while preserving the profile definition in `config.json` for future use.
+
 ---
 
 ## 🐚 Alternative: In-Shell Switching (Eval Mode)

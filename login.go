@@ -2,113 +2,166 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
-// IsAccountLoggedIn checks if the account is already logged in to gcloud.
-func IsAccountLoggedIn(account string) bool {
-	cmd := exec.Command("gcloud", "auth", "list", "--format=value(account)", "--filter=status:ACTIVE")
-	// We also want to check all accounts, not just active one, because CLOUDSDK_CORE_ACCOUNT can switch active one.
-	cmd = exec.Command("gcloud", "auth", "list", "--format=value(account)")
-	var out bytes.Buffer
-	cmd.Stdout = &out
+// IsAccountLoggedIn checks if the account is logged in and its session is still active in the profile context.
+func IsAccountLoggedIn(profileName string, account string) bool {
+	// Attempt to print the access token which actually performs validation against the Google token server
+	cmd := exec.Command("gcloud", "auth", "print-access-token", "--account="+account)
+	
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err == nil {
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env, "CLOUDSDK_CONFIG="+gcloudDir)
+	}
+
+	// If print-access-token succeeds, we are logged in and session is valid
 	if err := cmd.Run(); err != nil {
 		return false
 	}
-
-	accounts := strings.Split(out.String(), "\n")
-	for _, acc := range accounts {
-		if strings.TrimSpace(acc) == account {
-			return true
-		}
-	}
-	return false
+	return true
 }
 
-// RunGcloudLogin runs 'gcloud auth login' for the specified account.
-func RunGcloudLogin(account string) error {
+// IsADCActive checks if the Application Default Credentials are active and not expired for the profile.
+func IsADCActive(profileName string) bool {
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err != nil {
+		return false
+	}
+
+	cmd := exec.Command("gcloud", "auth", "application-default", "print-access-token")
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "CLOUDSDK_CONFIG="+gcloudDir)
+
+	// If print-access-token succeeds, ADC is active and valid
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+	return true
+}
+
+type TokenInfo struct {
+	ExpiresIn int `json:"expires_in"`
+}
+
+// GetTokenTTL returns the remaining TTL of the token (gcloud or ADC) in a human-readable format.
+func GetTokenTTL(profileName string, isADC bool) string {
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err != nil {
+		return "Error"
+	}
+
+	var cmd *exec.Cmd
+	if isADC {
+		cmd = exec.Command("gcloud", "auth", "application-default", "print-access-token")
+	} else {
+		cmd = exec.Command("gcloud", "auth", "print-access-token")
+	}
+
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "CLOUDSDK_CONFIG="+gcloudDir)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "Expired/Inactive"
+	}
+
+	token := strings.TrimSpace(out.String())
+	if token == "" {
+		return "Expired/Inactive"
+	}
+
+	// Query TokenInfo endpoint using a standard client with a timeout
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get("https://www.googleapis.com/oauth2/v1/tokeninfo?access_token=" + token)
+	if err != nil {
+		return "Active (Offline)"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "Invalid/Expired"
+	}
+
+	var info TokenInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return "Active"
+	}
+
+	if info.ExpiresIn <= 0 {
+		return "Expired"
+	}
+
+	duration := time.Duration(info.ExpiresIn) * time.Second
+	minutes := int(duration.Minutes())
+	seconds := int(duration.Seconds()) % 60
+	return fmt.Sprintf("%dm %ds", minutes, seconds)
+}
+
+// RunGcloudLogin runs 'gcloud auth login' inside the isolated profile directory.
+func RunGcloudLogin(profileName string, account string) error {
 	fmt.Printf("Authenticating gcloud for account: %s...\n", account)
+	
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(gcloudDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
 	cmd := exec.Command("gcloud", "auth", "login", "--account="+account)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Force writing credentials to the isolated profile folder
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "CLOUDSDK_CONFIG="+gcloudDir)
+
 	return cmd.Run()
 }
 
-// BootstrapADC authenticates ADC for the account and caches it.
-func BootstrapADC(account string) error {
-	adcCachePath, err := GetADCCachePath(account)
+// BootstrapADC authenticates ADC inside the profile's custom config directory.
+func BootstrapADC(profileName string, account string) error {
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
 	if err != nil {
 		return err
 	}
 
-	// Create parent directory for cache if it doesn't exist
-	if err := os.MkdirAll(filepath.Dir(adcCachePath), 0755); err != nil {
-		return fmt.Errorf("failed to create ADC cache directory: %w", err)
+	// Create profile directory for config if it doesn't exist
+	if err := os.MkdirAll(gcloudDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	globalADCPath := filepath.Join(home, ".config", "gcloud", "application_default_credentials.json")
-	backupADCPath := globalADCPath + ".backup"
-
-	// 1. Backup global ADC if it exists
-	hasBackup := false
-	if _, err := os.Stat(globalADCPath); err == nil {
-		fmt.Println("Backing up existing global Application Default Credentials...")
-		if err := os.Rename(globalADCPath, backupADCPath); err != nil {
-			return fmt.Errorf("failed to backup global ADC: %w", err)
-		}
-		hasBackup = true
-	}
-
-	// Defer restoration of backup
-	defer func() {
-		if hasBackup {
-			fmt.Println("Restoring global Application Default Credentials backup...")
-			os.Rename(backupADCPath, globalADCPath)
-		}
-	}()
-
-	// 2. Run gcloud auth application-default login
 	fmt.Printf("Authenticating Application Default Credentials (ADC) for %s...\n", account)
 	fmt.Println("Please complete the login in your browser. Make sure to select the correct account!")
 	
-	// We pass --no-launch-browser to make it easier to see the link if needed,
-	// but standard login is usually better. Let's just run standard login.
 	cmd := exec.Command("gcloud", "auth", "application-default", "login")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	// Force writing ADC directly inside the profile's folder
+	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "CLOUDSDK_CONFIG="+gcloudDir)
+
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run gcloud auth application-default login: %w", err)
 	}
 
-	// 3. Copy generated ADC to cache
-	if _, err := os.Stat(globalADCPath); err != nil {
-		return fmt.Errorf("expected ADC file at %s was not created: %w", globalADCPath, err)
-	}
-
-	// Read and write to copy file
-	data, err := os.ReadFile(globalADCPath)
-	if err != nil {
-		return fmt.Errorf("failed to read generated ADC: %w", err)
-	}
-
-	if err := os.WriteFile(adcCachePath, data, 0600); err != nil {
-		return fmt.Errorf("failed to cache ADC: %w", err)
-	}
-
-	fmt.Printf("ADC cached successfully at %s\n", adcCachePath)
-
-	// Clean up the generated global ADC so we can restore backup
-	os.Remove(globalADCPath)
+	adcPath, _ := GetADCCachePath(profileName)
+	fmt.Printf("ADC cached successfully at %s\n", adcPath)
 
 	return nil
 }
@@ -124,12 +177,14 @@ func BootstrapGKE(profileName string, profile Profile) error {
 		return err
 	}
 
+	gcloudDir, err := GetCloudsdkConfigDir(profileName)
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(filepath.Dir(kubePath), 0755); err != nil {
 		return fmt.Errorf("failed to create kubeconfig directory: %w", err)
 	}
-
-	// Remove existing kubeconfig if it's there to start fresh, or we can let gcloud merge it.
-	// Let's let gcloud merge it or create it.
 
 	fmt.Printf("Fetching GKE credentials for cluster %s in project %s...\n", profile.GKE.Cluster, profile.Project)
 
@@ -138,25 +193,12 @@ func BootstrapGKE(profileName string, profile Profile) error {
 	}
 	
 	if profile.GKE.Location != "" {
-		// GKE locations can be regional or zonal. gcloud handles both.
-		// But we need to specify --zone or --region or --location.
-		// gcloud supports --region or --zone.
-		// Actually, standard practice is to use --region or --zone.
-		// Let's check if we can use --location or if we need to detect.
-		// Usually, GKE get-credentials supports --region and --zone.
-		// Let's try to guess if it's regional (e.g. us-central1) or zonal (e.g. us-central1-a).
-		// Zonal usually has 3 segments (provider-region-zone), regional has 2.
-		// But to be safe, we can just try to pass --location if supported, or check the format.
-		// Actually, gcloud get-credentials supports both --region and --zone.
-		// Let's assume if the location has 3 segments (2 hyphens) it is zonal, else regional.
-		// Example: us-central1 (regional), us-central1-a (zonal).
 		parts := strings.Split(profile.GKE.Location, "-")
 		if len(parts) == 3 {
 			args = append(args, "--zone="+profile.GKE.Location)
 		} else if len(parts) == 2 {
 			args = append(args, "--region="+profile.GKE.Location)
 		} else if profile.GKE.Location != "" {
-			// Fallback, just try --zone
 			args = append(args, "--zone="+profile.GKE.Location)
 		}
 	}
@@ -165,6 +207,7 @@ func BootstrapGKE(profileName string, profile Profile) error {
 	
 	// Set up isolated environment for this command
 	cmd.Env = os.Environ()
+	cmd.Env = append(cmd.Env, "CLOUDSDK_CONFIG="+gcloudDir) // Use isolated gcloud context
 	cmd.Env = append(cmd.Env, "KUBECONFIG="+kubePath)
 	cmd.Env = append(cmd.Env, "CLOUDSDK_CORE_PROJECT="+profile.Project)
 	cmd.Env = append(cmd.Env, "CLOUDSDK_CORE_ACCOUNT="+profile.Account)
@@ -191,29 +234,22 @@ func LoginProfile(profileName string, cfg *Config) error {
 		return fmt.Errorf("profile %q not found", profileName)
 	}
 
-	// 1. Ensure gcloud is logged in
-	if !IsAccountLoggedIn(profile.Account) {
-		if err := RunGcloudLogin(profile.Account); err != nil {
+	// 1. Ensure gcloud is logged in and session is active
+	if !IsAccountLoggedIn(profileName, profile.Account) {
+		if err := RunGcloudLogin(profileName, profile.Account); err != nil {
 			return fmt.Errorf("gcloud authentication failed: %w", err)
 		}
 	} else {
-		fmt.Printf("gcloud already authenticated for %s\n", profile.Account)
+		fmt.Printf("gcloud already authenticated and active for %s\n", profile.Account)
 	}
 
-	// 2. Ensure ADC is cached
-	adcPath, err := GetADCCachePath(profile.Account)
-	if err != nil {
-		return err
-	}
-	
-	if _, err := os.Stat(adcPath); os.IsNotExist(err) {
-		if err := BootstrapADC(profile.Account); err != nil {
+	// 2. Ensure ADC is active
+	if !IsADCActive(profileName) {
+		if err := BootstrapADC(profileName, profile.Account); err != nil {
 			return fmt.Errorf("ADC bootstrapping failed: %w", err)
 		}
 	} else {
-		fmt.Printf("ADC already cached for %s\n", profile.Account)
-		// Allow force re-auth? Maybe we can have a --force flag.
-		// For now, we can just assume it's fine, or let them delete the cache file.
+		fmt.Printf("ADC already authenticated and active for %s\n", profile.Account)
 	}
 
 	// 3. Ensure GKE is configured
@@ -226,5 +262,30 @@ func LoginProfile(profileName string, cfg *Config) error {
 	fmt.Printf("\nSuccess! Profile %q is ready.\n", profileName)
 	fmt.Printf("To activate, run: eval $(gcp-sso env %s)\n", profileName)
 
+	return nil
+}
+
+// LogoutProfile deletes all cached credentials and GKE config for a profile.
+func LogoutProfile(profileName string, cfg *Config) error {
+	if _, ok := cfg.Profiles[profileName]; !ok {
+		return fmt.Errorf("profile %q not found", profileName)
+	}
+
+	profileDir, err := GetProfileDir(profileName)
+	if err != nil {
+		return err
+	}
+
+	if _, err := os.Stat(profileDir); os.IsNotExist(err) {
+		fmt.Printf("Profile %q is already logged out (no credentials found).\n", profileName)
+		return nil
+	}
+
+	fmt.Printf("Logging out of profile %q and cleaning up credentials...\n", profileName)
+	if err := os.RemoveAll(profileDir); err != nil {
+		return fmt.Errorf("failed to delete profile directory: %w", err)
+	}
+
+	fmt.Printf("Successfully logged out of profile %q.\n", profileName)
 	return nil
 }
