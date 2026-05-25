@@ -84,14 +84,46 @@ source ~/.bashrc  # or ~/.zshrc
 
 ## ⚙️ Configuration
 
-1.  **Initialize Configuration:**
-    ```bash
-    gcp-sso init
-    ```
-    This creates a template configuration at `~/.config/gcp-sso/config.json`.
+### 1. Initialize Configuration
+Run the following command to initialize the configuration directory and create a default template:
+```bash
+gcp-sso init
+```
+This creates a config file at `~/.config/gcp-sso/config.json`.
 
-2.  **Configure Profiles:**
-    Edit `~/.config/gcp-sso/config.json` to define your profiles:
+### 2. Configure Profiles via CLI (Recommended)
+
+You can manage your profiles entirely from the command line without manually editing JSON files.
+
+#### A. Interactive Wizard (Best for daily use)
+To configure a profile step-by-step with interactive prompts and current values as defaults:
+```bash
+gcp-sso configure my-dev-profile
+```
+
+#### B. Declarative Flags (Best for scripts and automation)
+To create or update a profile in a single command using flags:
+```bash
+# Simple profile
+gcp-sso configure set my-dev-profile --account=user@company.com --project=my-dev-project-123
+
+# Advanced profile with GKE and Impersonation
+gcp-sso configure set my-prod-profile \
+  --account=admin@company.com \
+  --project=my-prod-project-456 \
+  --impersonate-sa=prod-admin-sa@my-prod-project-456.iam.gserviceaccount.com \
+  --gke-cluster=prod-main-cluster \
+  --gke-location=us-central1
+```
+
+#### C. Delete a Profile
+To remove a profile from your configuration:
+```bash
+gcp-sso configure delete my-dev-profile
+```
+
+### 3. Manual JSON Editing (Alternative)
+If you prefer, you can still edit the `~/.config/gcp-sso/config.json` file directly. Here is the schema structure:
 
     ```json
     {

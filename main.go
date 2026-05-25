@@ -41,6 +41,8 @@ func main() {
 			profileName = os.Args[2]
 		}
 		handleConsole(profileName)
+	case "configure", "config":
+		handleConfigure()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -54,13 +56,16 @@ func printUsage() {
 	fmt.Println("\nUsage:")
 	fmt.Println("  gcp-sso <command> [arguments]")
 	fmt.Println("\nCommands:")
-	fmt.Println("  init               Initialize config directory and create config.json template")
-	fmt.Println("  list               List all configured profiles")
-	fmt.Println("  status             Show current active profile (from environment)")
-	fmt.Println("  login <profile>    Authenticate and bootstrap a profile (gcloud + ADC + GKE)")
-	fmt.Println("  env <profile>      Generate shell environment exports (intended for eval)")
-	fmt.Println("  console [<profile>] Open Google Cloud Console for active or specified profile")
-	fmt.Println("  help               Show this help message")
+	fmt.Println("  init                   Initialize config directory and create config.json template")
+	fmt.Println("  list                   List all configured profiles")
+	fmt.Println("  status                 Show current active profile (from environment)")
+	fmt.Println("  configure <profile>    Configure a profile interactively (wizard)")
+	fmt.Println("  configure set <name>   Configure properties via command-line flags")
+	fmt.Println("  configure delete <name> Delete a profile")
+	fmt.Println("  login <profile>        Authenticate and bootstrap a profile (gcloud + ADC + GKE)")
+	fmt.Println("  env <profile>          Generate shell environment exports (intended for eval)")
+	fmt.Println("  console [<profile>]     Open Google Cloud Console for active or specified profile")
+	fmt.Println("  help                   Show this help message")
 	fmt.Println("\nFor shell integration, add the following to your shell profile (e.g. ~/.bashrc or ~/.zshrc):")
 	fmt.Print(`
 gsp() {
