@@ -157,51 +157,57 @@ If you prefer, you can still edit the `~/.config/gcp-sso/config.json` file direc
 ## 📖 Usage
 
 ### 1. List Profiles
-List all configured profiles. The active profile in your current shell will be marked with an asterisk `*`.
+List all configured profiles:
 ```bash
-gsp
+gcp-sso list
 ```
-*or `gcp-sso list`*
 
-### 2. Login & Bootstrap
-Before using a profile for the first time, you must authenticate its user account and cache its credentials:
+### 2. Connect to a Profile (Subshell Mode - Recommended)
+To drop directly into an isolated terminal session pre-configured for a specific profile, run:
 ```bash
-gcp-sso login dev-developer
+gcp-sso shell dev-developer
 ```
-If the profile uses GKE or Service Account Impersonation:
-```bash
-gcp-sso login prod-admin
-```
-This will securely cache Application Default Credentials (ADC) for the admin account and fetch GKE cluster details into an isolated kubeconfig.
+*Or `gcp-sso connect dev-developer`*
 
-### 3. Switch Profile
-Activate a profile in your current shell session:
-```bash
-gsp dev-developer
-```
-Open a new terminal tab and activate another profile:
-```bash
-gsp prod-admin
-```
-Both tabs will run completely independently!
+*   **Auto-Login:** If the profile is not logged in yet (or GKE is not bootstrapped), the tool will **automatically run the login flow first** and then drop you into the shell!
+*   **Visual Feedback:** The command spawns a new subshell with a custom prompt indicator `[gcp-sso: dev-developer]`.
+*   **Exit:** To exit the profile and return to your original clean terminal, simply type:
+    ```bash
+    exit
+    ```
+This mode is highly recommended for running different profiles side-by-side in separate terminal tabs, `tmux` panes, or `screen` windows.
 
-### 4. View Status
-Check the current active profile and its environment variables:
+### 3. View Status
+Within an active profile shell, check the current environment state:
 ```bash
 gcp-sso status
 ```
 
-### 5. Open Cloud Console
+### 4. Open Cloud Console
 Directly open the Google Cloud Console web page pre-selected to the profile's project and user account:
 ```bash
 gcp-sso console
 ```
 
-### 6. Clear Profile
-To deactivate the profile and restore your default shell environment:
-```bash
-gsp off
-```
+---
+
+## 🐚 Alternative: In-Shell Switching (Eval Mode)
+
+If you prefer to switch profiles directly in your current shell without spawning a subshell process, you can use the shell wrapper integration.
+
+1.  **Configure Shell Integration:** Follow the steps in the [Shell Integration](#-shell-integration) section.
+2.  **Bootstrap/Login (Manually):**
+    ```bash
+    gcp-sso login dev-developer
+    ```
+3.  **Switch Profile:**
+    ```bash
+    gsp dev-developer
+    ```
+4.  **Clear Profile:**
+    ```bash
+    gsp off
+    ```
 
 ---
 

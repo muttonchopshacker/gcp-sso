@@ -24,60 +24,86 @@ func GetADCCachePath(account string) (string, error) {
 	return filepath.Join(dir, "adc", fmt.Sprintf("%s.json", account)), nil
 }
 
-// GenerateEnvOutputs generates shell export commands for the specified profile.
-func GenerateEnvOutputs(profileName string, cfg *Config) error {
+// GetEnvMap generates a map of all environment variables to be set for a profile.
+func GetEnvMap(profileName string, cfg *Config) (map[string]string, error) {
 	profile, ok := cfg.Profiles[profileName]
 	if !ok {
-		return fmt.Errorf("profile %q not found", profileName)
+		return nil, fmt.Errorf("profile %q not found", profileName)
 	}
 
-	fmt.Printf("export GCP_SSO_PROFILE=%q\n", profileName)
-	fmt.Printf("export CLOUDSDK_CORE_PROJECT=%q\n", profile.Project)
-	fmt.Printf("export CLOUDSDK_CORE_ACCOUNT=%q\n", profile.Account)
+	env := map[string]string{
+		"GCP_SSO_PROFILE":      profileName,
+		"CLOUDSDK_CORE_PROJECT": profile.Project,
+		"CLOUDSDK_CORE_ACCOUNT": profile.Account,
+	}
 
 	if profile.Region != "" {
-		fmt.Printf("export CLOUDSDK_COMPUTE_REGION=%q\n", profile.Region)
-	} else {
-		fmt.Println("unset CLOUDSDK_COMPUTE_REGION")
+		env["CLOUDSDK_COMPUTE_REGION"] = profile.Region
 	}
-
 	if profile.Zone != "" {
-		fmt.Printf("export CLOUDSDK_COMPUTE_ZONE=%q\n", profile.Zone)
-	} else {
-		fmt.Println("unset CLOUDSDK_COMPUTE_ZONE")
+		env["CLOUDSDK_COMPUTE_ZONE"] = profile.Zone
 	}
 
-	// Handle Impersonation
 	if profile.ImpersonateServiceAccount != "" {
-		fmt.Printf("export CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT=%q\n", profile.ImpersonateServiceAccount)
-		fmt.Printf("export GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=%q\n", profile.ImpersonateServiceAccount)
-	} else {
-		fmt.Println("unset CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT")
-		fmt.Println("unset GOOGLE_IMPERSONATE_SERVICE_ACCOUNT")
+		env["CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT"] = profile.ImpersonateServiceAccount
+		env["GOOGLE_IMPERSONATE_SERVICE_ACCOUNT"] = profile.ImpersonateServiceAccount
 	}
 
-	// Handle ADC
 	adcPath, err := GetADCCachePath(profile.Account)
 	if err == nil {
 		if _, err := os.Stat(adcPath); err == nil {
-			fmt.Printf("export GOOGLE_APPLICATION_CREDENTIALS=%q\n", adcPath)
-		} else {
-			fmt.Printf("# WARNING: ADC cache not found for account %s. Run 'gcp-sso login %s' to authenticate.\n", profile.Account, profileName)
-			fmt.Println("unset GOOGLE_APPLICATION_CREDENTIALS")
+			env["GOOGLE_APPLICATION_CREDENTIALS"] = adcPath
 		}
 	}
 
-	// Handle GKE / Kubeconfig
 	if profile.GKE != nil && profile.GKE.Cluster != "" {
 		kubePath, err := GetKubeconfigPath(profileName)
 		if err == nil {
-			fmt.Printf("export KUBECONFIG=%q\n", kubePath)
-			if _, err := os.Stat(kubePath); err != nil {
-				fmt.Printf("# WARNING: Kubeconfig not found for GKE cluster %s. Run 'gcp-sso login %s' to configure.\n", profile.GKE.Cluster, profileName)
-			}
+			env["KUBECONFIG"] = kubePath
 		}
-	} else {
-		fmt.Println("unset KUBECONFIG")
+	}
+
+	return env, nil
+}
+
+// GenerateEnvOutputs generates shell export commands for the specified profile.
+// This prints exports for active values, and unsets for missing values to clean previous states.
+func GenerateEnvOutputs(profileName string, cfg *Config) error {
+	env, err := GetEnvMap(profileName, cfg)
+	if err != nil {
+		return err
+	}
+
+	// Known set of variables we manage
+	keys := []string{
+		"GCP_SSO_PROFILE",
+		"CLOUDSDK_CORE_PROJECT",
+		"CLOUDSDK_CORE_ACCOUNT",
+		"CLOUDSDK_COMPUTE_REGION",
+		"CLOUDSDK_COMPUTE_ZONE",
+		"CLOUDSDK_AUTH_IMPERSONATE_SERVICE_ACCOUNT",
+		"GOOGLE_IMPERSONATE_SERVICE_ACCOUNT",
+		"GOOGLE_APPLICATION_CREDENTIALS",
+		"KUBECONFIG",
+	}
+
+	for _, key := range keys {
+		val, exists := env[key]
+		if exists {
+			fmt.Printf("export %s=%q\n", key, val)
+		} else {
+			// Handle printing comments/warnings for missing required files
+			if key == "GOOGLE_APPLICATION_CREDENTIALS" {
+				profile := cfg.Profiles[profileName]
+				fmt.Printf("# WARNING: ADC cache not found for account %s. Run 'gcp-sso login %s' to authenticate.\n", profile.Account, profileName)
+			} else if key == "KUBECONFIG" {
+				profile := cfg.Profiles[profileName]
+				if profile.GKE != nil && profile.GKE.Cluster != "" {
+					fmt.Printf("# WARNING: Kubeconfig not found for GKE cluster %s. Run 'gcp-sso login %s' to configure.\n", profile.GKE.Cluster, profileName)
+				}
+			}
+			fmt.Printf("unset %s\n", key)
+		}
 	}
 
 	return nil

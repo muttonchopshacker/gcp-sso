@@ -35,6 +35,12 @@ func main() {
 			os.Exit(1)
 		}
 		handleEnv(os.Args[2])
+	case "shell", "connect":
+		if len(os.Args) < 3 {
+			fmt.Println("Error: Profile name required. Usage: gcp-sso shell <profile-name>")
+			os.Exit(1)
+		}
+		handleShell(os.Args[2])
 	case "console":
 		profileName := ""
 		if len(os.Args) >= 3 {
@@ -62,6 +68,7 @@ func printUsage() {
 	fmt.Println("  configure <profile>    Configure a profile interactively (wizard)")
 	fmt.Println("  configure set <name>   Configure properties via command-line flags")
 	fmt.Println("  configure delete <name> Delete a profile")
+	fmt.Println("  shell <profile>        Spawn a pre-configured isolated subshell (primary usage)")
 	fmt.Println("  login <profile>        Authenticate and bootstrap a profile (gcloud + ADC + GKE)")
 	fmt.Println("  env <profile>          Generate shell environment exports (intended for eval)")
 	fmt.Println("  console [<profile>]     Open Google Cloud Console for active or specified profile")
